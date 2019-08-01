@@ -1,0 +1,14 @@
+; vim: ft=scheme
+((author "siiky")
+ (license "unlicense")
+ (synopsis "optimism wrapper to automatically generate help messages")
+ (version "0.1.0")
+ (dependencies
+   optimism
+   srfi-1)
+ ;(component-options (csc-options "-O0" "-d3"))
+ (components
+   (extension cling
+              (types-file)
+              (modules cling)
+              (source cling.scm))))
