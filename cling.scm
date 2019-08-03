@@ -10,12 +10,14 @@
 
   (import
     scheme
-    (only chicken.base assert compose foldl make-parameter print)
+    (only chicken.base assert compose cut foldl make-parameter print unless)
     (only chicken.process-context command-line-arguments program-name))
 
   (import
+    (only fmt columnar dsp fmt)
     (only optimism parse-command-line)
-    (only srfi-1 assoc filter for-each map))
+    (only srfi-1 assoc filter for-each map)
+    (only srfi-13 string-join string-upcase))
 
   (define (make-entry grammar help kons) `(,grammar ,help ,kons))
   (define (entry-grammar entry)           (car entry))
@@ -41,15 +43,40 @@
   (define *program-name* (make-parameter (program-name)))
   (define *help* (make-parameter #f))
 
+  (define (singl x) `(,x))
+  (define (smth->list smth)
+    (if (or (pair? smth)
+            (null? smth))
+        smth
+        (singl smth)))
+
   (define (help #!optional (pn (*program-name*)))
+    (define (get-switches/args-column ret)
+      (let* ((ret (map
+                    (lambda (l)
+                      `(,@(map symbol->string (caar l))
+                         ,@(map (compose string-upcase symbol->string)
+                                (smth->list (cdar l)))))
+                    ret))
+             (ret (map (cut string-join <> " ") ret))
+             (ret (string-join ret "\n")))
+        ret))
+
+    (define (get-text-column ret)
+      (let* ((ret (map cdr ret))
+             (ret (string-join ret "\n")))
+        ret))
+
     (let ((help (*help*))
           (usage (*usage*)))
       (assert help "Arguments must be processed before calling help")
-      (usage pn)
-      (newline)
-      ; TODO: Generate the help message from the help text list
-      (for-each print help)
-      (newline)))
+
+      (let ((switches/args-column (get-switches/args-column help))
+            (text-column (get-text-column help)))
+        (usage pn)
+        (newline)
+        (fmt #t (columnar (dsp switches/args-column) (dsp text-column)))
+        (newline))))
 
   (define (default-rest-kons ret _) ret)
 
@@ -59,7 +86,6 @@
   (define (process-arguments options knil #!optional (rest-kons default-rest-kons) (args (command-line-arguments)))
     (define (process-grammar/info grammar/info)
       (define (sanitize-grammar-entry e)
-        (define (smth->list smth) (if (pair? smth) smth `(,smth)))
         (and e (pair? e) (cons (smth->list (car e)) (cdr e))))
 
       (let ((grammar/info
