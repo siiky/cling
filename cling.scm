@@ -116,7 +116,7 @@
                       (rest-kons ret args)
                       (let ((proc (!f? (assoc switch kons memq) cdr)))
                         (if proc
-                            (proc ret args)
+                            (proc ret switch args)
                             ; NOTE: shouldn't happen
                             ret)))))))
         (foldl kons knil pargs))))

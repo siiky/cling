@@ -11,11 +11,11 @@
 (define opts
   `((((-h --help))
      "Show this help text"
-     ,(lambda (ret _) (update-options ret #:help #t)))
+     ,(lambda (ret _ _) (update-options ret #:help #t)))
 
     ((--some-arg . some-arg)
      "Some help message"
-     ,(lambda (ret some-arg) (update-options ret #:some-arg some-arg)))))
+     ,(lambda (ret _ some-arg) (update-options ret #:some-arg some-arg)))))
 
 (define (main args)
   (let ((options (process-arguments
