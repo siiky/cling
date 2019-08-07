@@ -3,6 +3,8 @@
   (
    *program-name*
    *usage*
+   arg
+   cling
    help
    process-arguments
    usage
@@ -10,38 +12,63 @@
 
   (import
     scheme
-    (only chicken.base assert compose cut foldl make-parameter print unless)
+    (only chicken.base compose cut foldl make-parameter print)
     (only chicken.process-context command-line-arguments program-name))
 
   (import
-    (only fmt columnar dsp fmt)
+    (only defstruct defstruct)
+    (only fmt dsp fmt fmt-join tabular)
     (only optimism parse-command-line)
     (only srfi-1 assoc filter for-each map)
-    (only srfi-13 string-join string-upcase))
-
-  (define (make-entry grammar help kons) `(,grammar ,help ,kons))
-  (define (entry-grammar entry)           (car entry))
-  (define (entry-help entry)              (cadr entry))
-  (define (entry-kons entry)              (caddr entry))
-  (define (maybe-entry-grammar entry)
-    (and (pair? entry)
-         (entry-grammar entry)))
-  (define (maybe-entry-help entry)
-    (and (pair? entry)
-         (pair? (cdr entry))
-         (entry-help entry)))
-  (define (maybe-entry-kons entry)
-    (and (pair? entry)
-         (pair? (cdr entry))
-         (pair? (cddr entry))
-         (entry-kons entry)))
+    (only srfi-13 string-upcase))
 
   (define (usage #!optional (pn (*program-name*)))
-    (print pn " [OPTIONS...] [--] [ARGS...]"))
+    (print pn " [OPTION ...] [--] [ARG ...]"))
 
   (define *usage* (make-parameter usage))
   (define *program-name* (make-parameter (program-name)))
-  (define *help* (make-parameter #f))
+
+  (define (kons-default ret switch args) ret)
+
+  (defstruct arg switches help kons)
+  (defstruct cling grammar help konses rest-kons)
+
+  (define (arg switches #!key (help "") (kons kons-default))
+    (make-arg #:switches (cons (smth->list (car switches)) (cdr switches))
+              #:help     help
+              #:kons     kons))
+
+  (define make-help-entry cons)
+  (define help-entry-text car)
+  (define help-entry-switches/args cdr)
+
+  (define (cling . args)
+    (define (get-help arg)
+      (let ((sa (arg-switches arg)))
+        (make-help-entry
+          (arg-help arg)
+          `(,@(map symbol->string (car sa))
+             ,@(map (compose string-upcase symbol->string)
+                    (smth->list (cdr sa)))))))
+
+    (define (get-kons arg)
+      (cons (car (arg-switches arg))
+            (arg-kons arg)))
+
+    (let* ((rest-kons/args ; Get optional positional arguments handler
+             (if (or (null? args)
+                     (arg? (car args)))
+                 (cons kons-default args)
+                 args))
+           (rest-kons (car rest-kons/args))
+           (args      (cdr rest-kons/args))
+           (grammar   (map arg-switches args))
+           (help      (map get-help     args))
+           (konses    (map get-kons     args)))
+      (make-cling #:grammar   grammar
+                  #:help      help
+                  #:konses    konses
+                  #:rest-kons rest-kons)))
 
   (define (singl x) `(,x))
   (define (smth->list smth)
@@ -50,74 +77,42 @@
         smth
         (singl smth)))
 
-  (define (help #!optional (pn (*program-name*)))
+  (define (help cling #!optional (pn (*program-name*)))
     (define (get-switches/args-column ret)
-      (let* ((ret (map
-                    (lambda (l)
-                      `(,@(map symbol->string (caar l))
-                         ,@(map (compose string-upcase symbol->string)
-                                (smth->list (cdar l)))))
-                    ret))
-             (ret (map (cut string-join <> " ") ret))
-             (ret (string-join ret "\n")))
+      (let* ((ret (map help-entry-switches/args ret))
+             (ret (map (cut fmt-join dsp <> " ") ret))
+             (ret (fmt-join dsp ret "\n")))
         ret))
 
     (define (get-text-column ret)
-      (let* ((ret (map cdr ret))
-             (ret (string-join ret "\n")))
+      (let* ((ret (map help-entry-text ret))
+             (ret (fmt-join dsp ret "\n")))
         ret))
 
-    (let ((help (*help*))
-          (usage (*usage*)))
-      (assert help "Arguments must be processed before calling help")
+    (let* ((help (cling-help cling))
+           (usage (*usage*))
+           (switches/args-column (get-switches/args-column help))
+           (text-column (get-text-column help)))
+      (usage pn)
+      (newline)
+      (fmt #t (tabular switches/args-column "\t" text-column))
+      (newline)))
 
-      (let ((switches/args-column (get-switches/args-column help))
-            (text-column (get-text-column help)))
-        (usage pn)
-        (newline)
-        (fmt #t (columnar (dsp switches/args-column) (dsp text-column)))
-        (newline))))
+  (define (process-arguments cling knil #!optional (args (command-line-arguments)))
+    (define (make-kons konses rest-kons)
+      (lambda (ret opt)
+        (let ((!f?    (lambda (x f) (if x (f x) x)))
+              (switch (car opt))
+              (args   (cdr opt)))
+          (if (eq? switch '--)
+              (rest-kons ret switch args)
+              (let ((proc (or (!f? (assoc switch konses memq) cdr)
+                              kons-default)))
+                (proc ret switch args))))))
 
-  (define (default-rest-kons ret _) ret)
-
-  (define (filter.map pred? f . ls)
-    (filter pred? (apply map f ls)))
-
-  (define (process-arguments options knil #!optional (rest-kons default-rest-kons) (args (command-line-arguments)))
-    (define (process-grammar/info grammar/info)
-      (define (sanitize-grammar-entry e)
-        (and e (pair? e) (cons (smth->list (car e)) (cdr e))))
-
-      (let ((grammar/info
-              (map (lambda (gi)
-                     (make-entry (sanitize-grammar-entry (maybe-entry-grammar gi))
-                                 (maybe-entry-help gi)
-                                 (maybe-entry-kons gi)))
-                   grammar/info))
-            (>< (lambda (f g)
-                  (lambda (gi)
-                    `(,(f gi) . ,(g gi))))))
-        (let ((grammar (map maybe-entry-grammar grammar/info))
-              (help (filter.map cdr (>< entry-grammar entry-help) grammar/info))
-              (kons (filter.map cdr (>< (compose car entry-grammar) entry-kons) grammar/info)))
-          (*help* help)
-          `(,grammar . ,kons))))
-
-    (let* ((grammar/kons (process-grammar/info options))
-           (grammar (car grammar/kons))
-           (kons (cdr grammar/kons)))
-      (let ((pargs (parse-command-line args grammar))
-            (kons
-              (lambda (ret opt)
-                (let ((!f? (lambda (x f) (if x (f x) x)))
-                      (switch (car opt))
-                      (args (cdr opt)))
-                  (if (eq? switch '--)
-                      (rest-kons ret args)
-                      (let ((proc (!f? (assoc switch kons memq) cdr)))
-                        (if proc
-                            (proc ret switch args)
-                            ; NOTE: shouldn't happen
-                            ret)))))))
-        (foldl kons knil pargs))))
+    (let* ((grammar (cling-grammar cling))
+           (konses  (cling-konses cling))
+           (pargs   (parse-command-line args grammar))
+           (kons    (make-kons konses (cling-rest-kons cling))))
+      (foldl kons knil pargs)))
   )
