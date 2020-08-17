@@ -4,7 +4,7 @@
 
 (import
   (only cling arg cling help process-arguments usage)
-  (only defstruct defstruct))
+  (only typed-records defstruct))
 
 (defstruct options help some-arg rest)
 
@@ -27,11 +27,14 @@
                    opts
                    (make-options #:help #f #:some-arg #f #:rest #f)
                    args)))
-    ; Use options
     (print "Help: " (options-help options))
     (print "Some arg: " (options-some-arg options))
     (print "Rest: " (options-rest options))
+
+    (print "Usage follows:")
     (usage (program-name))
+
+    (print "Full help follows:")
     (help opts (program-name))))
 
 (main (command-line-arguments))

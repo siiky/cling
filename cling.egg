@@ -2,13 +2,13 @@
 ((author "siiky")
  (license "unlicense")
  (synopsis "optimism wrapper to automatically generate help messages")
- (version "0.1.3")
+ (version "0.1.4")
  (dependencies
-   defstruct
    fmt
    optimism
    srfi-1
-   srfi-13)
+   srfi-13
+   typed-records)
  ;(component-options (csc-options "-O0" "-d3"))
  (components
    (extension cling
