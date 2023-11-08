@@ -3,6 +3,7 @@
   (
    *program-name*
    *usage*
+   *help-output-port*
    arg
    cling
    help
@@ -12,7 +13,8 @@
 
   (import
     scheme
-    (only chicken.base alist-ref cute foldl make-parameter o print)
+    (only chicken.base alist-ref current-error-port cute foldl make-parameter o print)
+    (only chicken.port with-output-to-port)
     (only chicken.process-context command-line-arguments program-name))
 
   (import
@@ -22,11 +24,15 @@
     (only srfi-13 string-upcase)
     (only typed-records defstruct))
 
-  (define (usage #!optional (pn (*program-name*)))
-    (print pn " [OPTION ...] [--] [ARG ...]"))
+  (define (usage port #!optional (pn (*program-name*)))
+    (with-output-to-port
+      port
+      (lambda ()
+        (print pn " [OPTION ...] [--] [ARG ...]"))))
 
   (define *usage* (make-parameter usage))
   (define *program-name* (make-parameter (program-name)))
+  (define *help-output-port* (make-parameter (current-error-port)))
 
   (define (kons-default ret switch args) ret)
 
@@ -89,14 +95,15 @@
              (ret (fmt-join dsp ret "\n")))
         ret))
 
-    (let* ((help (cling-help cling))
+    (let* ((port (*help-output-port*))
+           (help (cling-help cling))
            (usage (*usage*))
            (switches/args-column (get-switches/args-column help))
            (text-column (get-text-column help)))
-      (usage pn)
-      (newline)
-      (fmt #t (tabular switches/args-column "\t" text-column))
-      (newline)))
+      (usage port pn)
+      (newline port)
+      (fmt port (tabular switches/args-column "\t" text-column))
+      (newline port)))
 
   (define (process-arguments cling knil #!optional (args (command-line-arguments)))
     (define ((make-kons konses rest-kons) ret opt)
